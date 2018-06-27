@@ -1,0 +1,99 @@
+
+1----
+In FY18, out of all customers who opted for pick up (PUT + S2S), how many (count and %age) have never placed a pick-up order of over $35?
+ Some filters to help you:
+ 1.	where visit_date between X and Y
+ 2.	and channel = 'DOTCOM'
+ 3.	and service_id in (8, 11)
+
+
+
+
+SELECT 
+       AGE ,
+       TOTAL_COUNTS -- This is the Total Number of Customers in that Age Group
+       (TOTAL_COUNTS/TOTAL_SUM)*100 -- This is the % Customers in that Age Group 
+FROM 
+(
+SELECT 
+       AGE ,
+       TOTAL_COUNTS , 
+       SUM(1) OVER ( PARTITION BY ORDER_STATUS) TOTAL_SUM -- Total Number of Orders
+FROM  
+(
+SELECT 
+       ROUND(DATEDIFF(C.DATE_OF_BIRTH,CURRENT_DATE)/(365),0) as AGE -- Age of the Customer 
+       ,COUNT(*) TOTAL_COUNTS -- Total Number Grouped by Age
+
+FROM 
+       CUSTOMER C
+LEFT JOIN ORDERS O
+       ON
+              C.CUSTOMER_ID = O.CUSTOMER_ID
+WHERE 
+       ORDER_DATE BETWEEN '01-02-2017'  AND '01-31-2018' -- FY2018
+       AND SERVICE_ID in (8,11) -- SERVICE_ID PUT , S2S
+       AND ORDER_STATUS ='PENDING_PICKUP' -- Order Not Picked Up Yet
+       AND ORDER_TOTAL > 35 -- Order Total > 35$
+GROUP BY 
+       ROUND(DATEDIFF(C.DATE_OF_BIRTH,CURRENT_DATE)/(365),0)
+) as B
+) AS D
+
+
+--- Out Put 
+
+12  2500 1.2
+30     5000 2.3
+.
+.
+.
+
+
+2 ---- 
+Cumulative revenue for “DOTCOM” and “OG” until end of each month of FY18 i.e. total revenue until end of Feb’17, until end of March’17… until end of Jan’18
+
+SELECT 
+ORDR_DT_YYYYMM ,
+SUM(SUM_PER_MONTH) OVER ( ORDER BY ORDR_DT_YYYYMM ASC rows unbounded preceding ) CUMILATIVE_SUM -- This will do Cummilative sum over the Order Date 
+SELECT 
+       year(ORDER_DATE) || month(O.ORDER_DATE)  AS ORDR_DT_YYYYMM -- The Month we want to check
+       SUM(ORDER_TOTAL)  SUM_PER_MONTH -- Total Rev in that Month 
+FROM 
+       ORDERS O
+       ORDER_DATE BETWEEN '01-02-2017'  AND '01-31-2018' -- FY2018
+       AND ORDER_STATUS ='PAYMENT_PROCESSED' -- Order Completed
+       AND ORDER_RETURN_STATUS in (Null,'N') -- Order Was not Returned
+       AND CHANNEL IN ('DOTCOM' ,'OG')
+GROUP BY month(O.ORDER_DATE) || year(ORDER_DATE)
+) AS A
+
+
+3----
+For each quarter of a fiscal year - what percentage of shoppers (dotcom only) shopping in a fiscal quarter, will shop again (repeat) in the following quarter? You’d have to look at Q1 for the next FY to get repeat rate for Q4
+SELECT 
+*
+FROM 
+( 
+
+SELECT 
+CUSTOMER_ID 
+,SALE_QUARTER
+,FIRST_QUARTER
+,LEAD(RANK_QUATER,1) OVER ( PARTITION BY CUSTOMER_ID ORDER BY RANK_QUARTER DESC ) AS NEXT_QUARTER
+FROM 
+(
+SELECT
+       SALE_QUARTER -- Assuming this is the field in the table or I have function to get it.
+       ,C.CUSTOMER_ID 
+       ,RANK() OVER (PARTITION BY SALE_QUARTER ORDER BY SALE_QUARTER) RANK_QUARTER -- This will Rank the Quarter 
+FROM 
+       ORDER O
+LEFT JOIN 
+       CUSTOMER
+       C.CUSOMTER_ID = O.CUSTOMER_ID
+WHERE 
+       AND CHANNEL ='DOTCOM'  -- Only .com users 
+) as A
+) AS D
+WHERE ( NEXT_QUARTER - FIRST_QUARTER) = 1 -- This will make sure the next sale happened in consecutive quarters 
